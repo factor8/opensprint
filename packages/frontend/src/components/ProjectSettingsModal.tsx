@@ -25,6 +25,7 @@ import {
   AI_AUTONOMY_LEVELS,
   DEFAULT_AI_AUTONOMY_LEVEL,
   DEFAULT_REVIEW_MODE,
+  DEFAULT_AGENT_CONFIG,
   getDeploymentTargetsForUi,
   AUTO_DEPLOY_TRIGGER_OPTIONS,
   type AutoDeployTrigger,
@@ -133,16 +134,8 @@ export function ProjectSettingsModal({ project, onClose, onSaved, fullScreen }: 
       .catch(() => setEnvKeys(null));
   }, [activeTab]);
 
-  const simpleComplexityAgent = settings?.simpleComplexityAgent ?? settings?.simpleComplexityAgent ?? {
-    type: "cursor" as AgentType,
-    model: null,
-    cliCommand: null,
-  };
-  const complexComplexityAgent = settings?.complexComplexityAgent ?? settings?.complexComplexityAgent ?? {
-    type: "cursor" as AgentType,
-    model: null,
-    cliCommand: null,
-  };
+  const simpleComplexityAgent = settings?.simpleComplexityAgent ?? { ...DEFAULT_AGENT_CONFIG };
+  const complexComplexityAgent = settings?.complexComplexityAgent ?? { ...DEFAULT_AGENT_CONFIG };
   const deployment = settings?.deployment ?? { mode: "custom" as DeploymentMode };
   const aiAutonomyLevel = settings?.aiAutonomyLevel ?? DEFAULT_AI_AUTONOMY_LEVEL;
   const gitWorkingMode = settings?.gitWorkingMode ?? "worktree";
@@ -274,7 +267,7 @@ export function ProjectSettingsModal({ project, onClose, onSaved, fullScreen }: 
     [settings, persistSettings, fullScreen, setSearchParams]
   );
 
-  const defaultAgent = { type: "cursor" as AgentType, model: null, cliCommand: null };
+  const defaultAgent = { ...DEFAULT_AGENT_CONFIG };
 
   const updateSimpleComplexityAgent = (
     updates: Partial<typeof simpleComplexityAgent>,

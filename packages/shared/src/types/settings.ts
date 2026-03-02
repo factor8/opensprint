@@ -470,8 +470,11 @@ export function getAgentForComplexity(
   return settings.simpleComplexityAgent;
 }
 
+/** Default agent type when no provider has been configured yet. */
+export const DEFAULT_AGENT_TYPE: AgentType = "cursor";
+
 /** Default agent config when settings are missing */
-const DEFAULT_AGENT: AgentConfig = { type: "cursor", model: null, cliCommand: null };
+export const DEFAULT_AGENT_CONFIG: AgentConfig = { type: DEFAULT_AGENT_TYPE, model: null, cliCommand: null };
 
 const VALID_AI_AUTONOMY_LEVELS: AiAutonomyLevel[] = ["confirm_all", "major_only", "full"];
 
@@ -521,9 +524,9 @@ export function parseSettings(raw: unknown): ProjectSettings {
     } as ProjectSettings;
   }
   const simple =
-    (simpleObj && typeof simpleObj === "object" ? (simpleObj as AgentConfig) : null) ?? DEFAULT_AGENT;
+    (simpleObj && typeof simpleObj === "object" ? (simpleObj as AgentConfig) : null) ?? DEFAULT_AGENT_CONFIG;
   const complex =
-    (complexObj && typeof complexObj === "object" ? (complexObj as AgentConfig) : null) ?? DEFAULT_AGENT;
+    (complexObj && typeof complexObj === "object" ? (complexObj as AgentConfig) : null) ?? DEFAULT_AGENT_CONFIG;
   return {
     ...rest,
     simpleComplexityAgent: simple,
@@ -711,4 +714,36 @@ export function isLimitHitExpired(limitHitAt: string | undefined): boolean {
   } catch {
     return true;
   }
+}
+
+/**
+ * Available key flags as returned by the env/keys endpoint or equivalent check.
+ * Used to auto-select the best agent type.
+ */
+export interface AvailableKeys {
+  anthropic: boolean;
+  cursor: boolean;
+  openai: boolean;
+  claudeCli: boolean;
+}
+
+/**
+ * Pick the best available agent type given the configured API keys/CLI availability.
+ * Preference order: claude-cli > claude (API) > cursor > openai > DEFAULT_AGENT_TYPE fallback.
+ */
+export function getBestAvailableAgentType(keys: AvailableKeys): AgentType {
+  if (keys.claudeCli) return "claude-cli";
+  if (keys.anthropic) return "claude";
+  if (keys.cursor) return "cursor";
+  if (keys.openai) return "openai";
+  return DEFAULT_AGENT_TYPE;
+}
+
+/**
+ * Build a default AgentConfig using the best available provider.
+ * Falls back to DEFAULT_AGENT_CONFIG when no keys info is provided.
+ */
+export function buildDefaultAgentConfig(keys?: AvailableKeys): AgentConfig {
+  if (!keys) return { ...DEFAULT_AGENT_CONFIG };
+  return { type: getBestAvailableAgentType(keys), model: null, cliCommand: null };
 }

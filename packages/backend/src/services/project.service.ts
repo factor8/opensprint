@@ -21,6 +21,7 @@ import {
   DEFAULT_AI_AUTONOMY_LEVEL,
   DEFAULT_DEPLOYMENT_CONFIG,
   DEFAULT_REVIEW_MODE,
+  DEFAULT_AGENT_CONFIG,
   getTestCommandForFramework,
   hilConfigFromAiAutonomyLevel,
   parseSettings,
@@ -101,12 +102,7 @@ function normalizeRepoPath(p: string): string {
   return p.trim().replace(/\/+$/, "") || "";
 }
 
-/** Default agent config used when creating or repairing settings (e.g. adopt path). */
-const DEFAULT_AGENT_CONFIG = {
-  type: "cursor" as const,
-  model: null as string | null,
-  cliCommand: null as string | null,
-};
+// DEFAULT_AGENT_CONFIG is imported from @opensprint/shared
 
 /** Build default ProjectSettings for a repo (no user input). Used when adopting or repairing. */
 function buildDefaultSettings(): ProjectSettings {
@@ -460,7 +456,7 @@ export class ProjectService {
     }
 
     const repoPath = path.resolve(parentPath);
-    const agentConfig = (input.simpleComplexityAgent ?? DEFAULT_AGENT_CONFIG) as AgentConfigInput & { type: "cursor" | "claude" | "claude-cli" | "custom" };
+    const agentConfig = (input.simpleComplexityAgent ?? DEFAULT_AGENT_CONFIG) as AgentConfigInput;
     let recovery: ScaffoldRecoveryInfo | undefined;
 
     if (template === "web-app-expo-react") {
@@ -585,7 +581,7 @@ export class ProjectService {
       const recoveryResult = await attemptRecovery(
         classification,
         cwd,
-        agentConfig as AgentConfigInput & { type: "cursor" | "claude" | "claude-cli" | "custom" },
+        agentConfig as AgentConfigInput,
       );
 
       if (!recoveryResult.success) {
