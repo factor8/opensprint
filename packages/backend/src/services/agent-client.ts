@@ -703,10 +703,12 @@ export class AgentClient {
       outputLogPath: outputLogPath ?? "(pipe)",
     });
 
+    // Strip CLAUDECODE env var so child claude processes don't refuse to run
+    const { CLAUDECODE: _cc, ...baseEnv } = process.env;
     const spawnEnv =
       config.type === "cursor" && cursorEnvOverrides
-        ? { ...process.env, ...cursorEnvOverrides }
-        : { ...process.env };
+        ? { ...baseEnv, ...cursorEnvOverrides }
+        : { ...baseEnv };
 
     const child = spawn(command, args, {
       cwd,
@@ -919,18 +921,46 @@ export class AgentClient {
 
   private async invokeClaudeCli(options: AgentInvokeOptions): Promise<AgentResponse> {
     const { config, prompt, systemPrompt, conversationHistory } = options;
-    const fullPrompt = buildFullPrompt({ systemPrompt, conversationHistory, prompt });
 
-    const args = ["--print", fullPrompt];
-    if (config.model) {
-      args.unshift("--model", config.model);
+    // Build the user message: conversation history (if any) + final user prompt.
+    // System prompt is passed via --system-prompt flag so Claude CLI handles it natively
+    // instead of cramming everything into one giant positional argument.
+    let userMessage = "";
+    if (conversationHistory && conversationHistory.length > 0) {
+      for (const msg of conversationHistory) {
+        userMessage += `${msg.role === "user" ? "Human" : "Assistant"}: ${msg.content}\n\n`;
+      }
     }
+    userMessage += prompt;
+
+    log.info("invokeClaudeCli: spawning claude process", {
+      model: config.model ?? "(default)",
+      systemPromptLength: systemPrompt?.length ?? 0,
+      userMessageLength: userMessage.length,
+      cwd: options.cwd || process.cwd(),
+    });
+
+    // Disable all tools so the planning agent can ONLY respond with text.
+    // Without this, the claude CLI runs as an agentic session and may use its
+    // built-in tools (Write, Edit, TodoWrite, etc.) to "create plans" as files
+    // instead of outputting JSON to stdout — resulting in empty content.
+    const args = ["--print", "--tools", ""];
+    if (config.model) {
+      args.push("--model", config.model);
+    }
+    if (systemPrompt) {
+      args.push("--system-prompt", systemPrompt);
+    }
+    args.push(userMessage);
     const cwd = options.cwd || process.cwd();
 
+    // Strip CLAUDECODE env var so the child process doesn't refuse to run
+    // ("cannot be launched inside another Claude Code session")
+    const { CLAUDECODE: _, ...cleanEnv } = process.env;
     const child = spawn("claude", args, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env },
+      env: cleanEnv,
       detached: true,
     });
 
@@ -968,7 +998,7 @@ export class AgentClient {
     options?: { processGroup?: boolean }
   ): Promise<string> {
     return new Promise((resolve, reject) => {
-      const TIMEOUT_MS = 300_000;
+      const TIMEOUT_MS = 600_000; // 10 minutes — large decomposition prompts need time
       let stdout = "";
       let stderr = "";
 
@@ -986,16 +1016,26 @@ export class AgentClient {
       };
       const timeout = setTimeout(() => {
         if (child.killed) return;
+        log.warn("runClaudeAgentSpawn: TIMEOUT — killing agent", {
+          timeoutMs: TIMEOUT_MS,
+          stdoutLength: stdout.length,
+          stderrLength: stderr.length,
+          stdoutPreview: stdout.slice(0, 300),
+          stderrPreview: stderr.slice(0, 300),
+        });
         killChild("SIGTERM");
         setTimeout(() => killChild("SIGKILL"), 3000);
         if (stdout.trim()) {
+          log.warn("runClaudeAgentSpawn: returning partial output after timeout", {
+            stdoutLength: stdout.length,
+          });
           resolve(stdout.trim());
         } else {
           reject(
             new AppError(
               504,
               ErrorCodes.AGENT_INVOKE_FAILED,
-              `Claude CLI timed out after ${TIMEOUT_MS / 1000}s. stderr: ${stderr.slice(0, 500)}`,
+              `Claude CLI timed out after ${TIMEOUT_MS / 1000}s with no output. The prompt may be too large or the model too slow. stderr: ${stderr.slice(0, 500)}`,
               {
                 agentType: "claude",
                 isTimeout: true,
@@ -1009,15 +1049,33 @@ export class AgentClient {
       // Attach close/error first so we handle early exit (e.g. ENOENT) before data listeners
       child.on("close", (code) => {
         clearTimeout(timeout);
+        log.info("runClaudeAgentSpawn: process exited", {
+          exitCode: code,
+          stdoutLength: stdout.length,
+          stderrLength: stderr.length,
+        });
         if (code === 0 || stdout.trim()) {
+          if (code !== 0) {
+            log.warn("runClaudeAgentSpawn: non-zero exit code but has stdout, using output", {
+              exitCode: code,
+              stderrPreview: stderr.slice(0, 300),
+            });
+          }
           resolve(stdout.trim());
         } else {
+          log.error("runClaudeAgentSpawn: process failed with no output", {
+            exitCode: code,
+            stderr: stderr.slice(0, 500),
+          });
           reject(new Error(stderr || `claude exited with code ${code}`));
         }
       });
 
       child.on("error", (err) => {
         clearTimeout(timeout);
+        log.error("runClaudeAgentSpawn: process error", {
+          error: err.message,
+        });
         reject(err);
       });
 

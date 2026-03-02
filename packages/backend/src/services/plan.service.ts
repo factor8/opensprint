@@ -1761,16 +1761,35 @@ ${planNew}`;
   private async buildPrdContext(projectId: string): Promise<string> {
     try {
       const prd = await this.prdService.getPrd(projectId);
+      const sectionKeys = Object.keys(prd.sections);
+      const populatedSections: string[] = [];
       let context = "";
       for (const [key, section] of Object.entries(prd.sections)) {
         if (section.content) {
+          populatedSections.push(key);
           context += `### ${key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}\n`;
           context += `${section.content}\n\n`;
         }
       }
+      log.info("buildPrdContext: PRD loaded", {
+        projectId,
+        totalSections: sectionKeys.length,
+        populatedSections: populatedSections.length,
+        populatedKeys: populatedSections,
+        contextLength: context.length,
+      });
+      if (!context) {
+        log.warn("buildPrdContext: PRD exists but ALL sections are empty", {
+          projectId,
+          sectionKeys,
+        });
+      }
       return context || "The PRD is currently empty.";
     } catch (err) {
-      log.warn("buildPrdContext: PRD unavailable", { err: getErrorMessage(err) });
+      log.error("buildPrdContext: PRD fetch FAILED — agent will receive fallback 'No PRD exists yet'", {
+        projectId,
+        error: getErrorMessage(err),
+      });
       return "No PRD exists yet.";
     }
   }
@@ -1933,6 +1952,14 @@ Field rules: complexity: low, medium, high, or very_high (plan-level). Task-leve
    * Extracts JSON from response (may be wrapped in ```json ... ```).
    */
   private parseDecomposeResponse(content: string): SuggestedPlan[] {
+    log.info("parseDecomposeResponse: attempting JSON extraction", {
+      contentLength: content.length,
+      startsWithBrace: content.trimStart().startsWith("{"),
+      startsWithBracket: content.trimStart().startsWith("["),
+      containsPlansKey: content.includes('"plans"'),
+      containsPlanListKey: content.includes('"plan_list"'),
+    });
+
     // Try "plans" or "plan_list" so we find JSON when Planner uses snake_case
     const parsed =
       extractJsonFromAgentResponse<{ plans?: unknown[]; plan_list?: unknown[] }>(
@@ -1944,6 +1971,11 @@ Field rules: complexity: low, medium, high, or very_high (plan-level). Task-leve
         "plan_list"
       );
     if (!parsed) {
+      log.error("parseDecomposeResponse: FAILED to extract JSON from agent response", {
+        contentLength: content.length,
+        responsePreview: content.slice(0, 500),
+        responseTail: content.slice(-200),
+      });
       throw new AppError(
         400,
         ErrorCodes.DECOMPOSE_PARSE_FAILED,
@@ -1954,7 +1986,15 @@ Field rules: complexity: low, medium, high, or very_high (plan-level). Task-leve
     }
 
     const rawSpecs = (parsed.plans ?? parsed.plan_list ?? []) as Array<Record<string, unknown>>;
+    log.info("parseDecomposeResponse: JSON extracted", {
+      parsedKeys: Object.keys(parsed),
+      rawSpecCount: rawSpecs.length,
+    });
+
     if (rawSpecs.length === 0) {
+      log.error("parseDecomposeResponse: agent returned valid JSON but plans array is EMPTY", {
+        parsedKeys: Object.keys(parsed),
+      });
       throw new AppError(
         400,
         ErrorCodes.DECOMPOSE_EMPTY,
@@ -1980,10 +2020,31 @@ Field rules: complexity: low, medium, high, or very_high (plan-level). Task-leve
    * Creates Plans + tasks from AI. PRD §7.2.2
    */
   async decomposeFromPrd(projectId: string): Promise<{ created: number; plans: Plan[] }> {
+    const decomposeStart = Date.now();
+    log.info("decomposeFromPrd: starting", { projectId });
+
     const repoPath = await this.getRepoPath(projectId);
     const settings = await this.projectService.getSettings(projectId);
+    const agentConfig = getAgentForPlanningRole(settings, "planner");
+    log.info("decomposeFromPrd: agent config resolved", {
+      projectId,
+      agentType: agentConfig.type,
+      model: agentConfig.model ?? "(default)",
+    });
 
     const prdContext = await this.buildPrdContext(projectId);
+    log.info("decomposeFromPrd: PRD context built", {
+      projectId,
+      prdContextLength: prdContext.length,
+      prdPreview: prdContext.slice(0, 200),
+    });
+
+    if (
+      prdContext === "No PRD exists yet." ||
+      prdContext === "The PRD is currently empty."
+    ) {
+      log.warn("decomposeFromPrd: PRD is empty or missing — agent will have no content to decompose", { projectId });
+    }
 
     const prompt = `Analyze the PRD below and produce a feature decomposition. Output valid JSON with a "plans" array. Each plan has: title, content (full markdown), complexity (low|medium|high|very_high), and tasks array. Each task has: title, description, priority (0-4), dependsOn (array of task titles it depends on), complexity (integer 1-10 — assign per task based on implementation difficulty, 1=simplest, 10=most complex).`;
 
@@ -1995,22 +2056,71 @@ Field rules: complexity: low, medium, high, or very_high (plan-level). Task-leve
       ? `${baseSystemPrompt}\n\n## AI Autonomy Level\n\n${autonomyDesc}\n\n`
       : baseSystemPrompt;
 
-    const response = await agentService.invokePlanningAgent({
+    log.info("decomposeFromPrd: invoking planning agent", {
       projectId,
-      config: getAgentForPlanningRole(settings, "planner"),
-      messages: [{ role: "user", content: prompt }],
-      systemPrompt,
-      cwd: repoPath,
-      tracking: {
-        id: agentId,
+      agentId,
+      systemPromptLength: systemPrompt.length,
+    });
+    const agentStart = Date.now();
+
+    let response;
+    try {
+      response = await agentService.invokePlanningAgent({
         projectId,
-        phase: "plan",
-        role: "planner",
-        label: "Feature decomposition",
-      },
+        config: agentConfig,
+        messages: [{ role: "user", content: prompt }],
+        systemPrompt,
+        cwd: repoPath,
+        tracking: {
+          id: agentId,
+          projectId,
+          phase: "plan",
+          role: "planner",
+          label: "Feature decomposition",
+        },
+      });
+    } catch (err) {
+      const elapsed = Date.now() - agentStart;
+      log.error("decomposeFromPrd: planning agent invocation FAILED", {
+        projectId,
+        agentId,
+        elapsedMs: elapsed,
+        error: getErrorMessage(err),
+      });
+      throw err;
+    }
+
+    const agentElapsed = Date.now() - agentStart;
+    log.info("decomposeFromPrd: planning agent responded", {
+      projectId,
+      agentId,
+      elapsedMs: agentElapsed,
+      responseLength: response.content.length,
+      responsePreview: response.content.slice(0, 300),
     });
 
+    if (!response.content || response.content.trim().length === 0) {
+      log.error("decomposeFromPrd: planning agent returned EMPTY response", {
+        projectId,
+        agentId,
+        agentType: agentConfig.type,
+        model: agentConfig.model ?? "(default)",
+      });
+      throw new AppError(
+        502,
+        ErrorCodes.AGENT_INVOKE_FAILED,
+        `Planning agent returned an empty response. This usually means the agent (${agentConfig.type}, model: ${agentConfig.model ?? "default"}) failed silently. Check your API key and model configuration in Settings.`,
+        { agentType: agentConfig.type, model: agentConfig.model }
+      );
+    }
+
+    log.info("decomposeFromPrd: parsing agent response", { projectId });
     const planSpecs = this.parseDecomposeResponse(response.content);
+    log.info("decomposeFromPrd: parsed plan specs", {
+      projectId,
+      planCount: planSpecs.length,
+      planTitles: planSpecs.map((s) => s.title),
+    });
 
     const created: Plan[] = [];
     for (const spec of planSpecs) {
@@ -2020,6 +2130,11 @@ Field rules: complexity: low, medium, high, or very_high (plan-level). Task-leve
         normalizeDependsOnPlans(spec as unknown as Record<string, unknown>)
       );
       const rawTasks = (spec.tasks ?? []) as unknown as Array<Record<string, unknown>>;
+      log.info("decomposeFromPrd: creating plan", {
+        projectId,
+        title: spec.title || "Untitled Feature",
+        taskCount: rawTasks.length,
+      });
       const plan = await this.createPlan(projectId, {
         title: spec.title || "Untitled Feature",
         content,
@@ -2036,16 +2151,31 @@ Field rules: complexity: low, medium, high, or very_high (plan-level). Task-leve
       created.push(plan);
     }
 
+    log.info("decomposeFromPrd: all plans created", {
+      projectId,
+      createdCount: created.length,
+    });
+
     // Auto-review: invoke second agent to mark already-implemented tasks as done
     try {
       await this.autoReviewPlanAgainstRepo(projectId, created);
     } catch (err) {
-      log.error("Auto-review after decompose failed", { err });
+      log.error("Auto-review after decompose failed", {
+        projectId,
+        error: getErrorMessage(err),
+      });
       // Decompose succeeded; auto-review is best-effort
     }
 
     // Create planning run with PRD snapshot (PRD §5.6, §7.2.2)
     await this.createPlanningRun(projectId, created);
+
+    const totalElapsed = Date.now() - decomposeStart;
+    log.info("decomposeFromPrd: COMPLETED", {
+      projectId,
+      createdCount: created.length,
+      totalElapsedMs: totalElapsed,
+    });
 
     return { created: created.length, plans: created };
   }

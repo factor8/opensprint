@@ -1,6 +1,7 @@
 import { Router, Request } from "express";
 import { PlanService } from "../services/plan.service.js";
 import { orchestratorService } from "../services/orchestrator.service.js";
+import { createLogger } from "../utils/logger.js";
 import type {
   ApiResponse,
   Plan,
@@ -9,6 +10,7 @@ import type {
   CrossEpicDependenciesResponse,
 } from "@opensprint/shared";
 
+const log = createLogger("plans-route");
 const planService = new PlanService();
 
 export const plansRouter = Router({ mergeParams: true });
@@ -18,11 +20,19 @@ type PlanParams = { projectId: string; planId: string };
 
 // POST /projects/:projectId/plans/decompose — AI decompose PRD into plans + tasks (must be before :planId)
 plansRouter.post("/decompose", async (req: Request<ProjectParams>, res, next) => {
+  const { projectId } = req.params;
+  log.info("POST /decompose: received request", { projectId });
   try {
-    const result = await planService.decomposeFromPrd(req.params.projectId);
+    const result = await planService.decomposeFromPrd(projectId);
+    log.info("POST /decompose: success", { projectId, createdPlans: result.created });
     const body: ApiResponse<{ created: number; plans: Plan[] }> = { data: result };
     res.status(201).json(body);
   } catch (err) {
+    log.error("POST /decompose: FAILED", {
+      projectId,
+      error: err instanceof Error ? err.message : String(err),
+      errorName: err instanceof Error ? err.name : typeof err,
+    });
     next(err);
   }
 });

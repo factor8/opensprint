@@ -15,7 +15,10 @@ import {
   type OpenAIResponsesInputMessage,
 } from "../utils/openai-models.js";
 import { shellExec } from "../utils/shell-exec.js";
+import { createLogger } from "../utils/logger.js";
 import { activeAgentsService } from "./active-agents.service.js";
+
+const log = createLogger("agent");
 import {
   getNextKey,
   recordLimitHit,
@@ -176,6 +179,12 @@ export class AgentService {
    */
   async invokePlanningAgent(options: InvokePlanningAgentOptions): Promise<PlanningAgentResponse> {
     const { tracking } = options;
+    log.info("invokePlanningAgent: starting", {
+      agentType: options.config.type,
+      model: options.config.model ?? "(default)",
+      trackingId: tracking?.id,
+      label: tracking?.label,
+    });
     if (tracking) {
       activeAgentsService.register(
         tracking.id,
@@ -190,8 +199,25 @@ export class AgentService {
         tracking.feedbackId
       );
     }
+    const start = Date.now();
     try {
-      return await this._invokePlanningAgentInner(options);
+      const result = await this._invokePlanningAgentInner(options);
+      const elapsed = Date.now() - start;
+      log.info("invokePlanningAgent: completed", {
+        trackingId: tracking?.id,
+        elapsedMs: elapsed,
+        responseLength: result.content.length,
+        responseEmpty: result.content.trim().length === 0,
+      });
+      return result;
+    } catch (err) {
+      const elapsed = Date.now() - start;
+      log.error("invokePlanningAgent: FAILED", {
+        trackingId: tracking?.id,
+        elapsedMs: elapsed,
+        error: getErrorMessage(err),
+      });
+      throw err;
     } finally {
       if (tracking) activeAgentsService.unregister(tracking.id);
     }
@@ -203,15 +229,18 @@ export class AgentService {
     const { config, messages, systemPrompt, cwd, onChunk, images } = options;
 
     if (config.type === "claude") {
+      log.info("_invokePlanningAgentInner: routing to Claude API", { model: config.model });
       return this.invokeClaudePlanningAgent(options);
     }
 
     if (config.type === "openai") {
+      log.info("_invokePlanningAgentInner: routing to OpenAI API", { model: config.model });
       return this.invokeOpenAIPlanningAgent(options);
     }
 
     // Cursor and custom: use AgentClient (CLI-based). Images are written to temp files
     // and paths appended to the prompt so the agent can read them via tool calling.
+    log.info("_invokePlanningAgentInner: routing to CLI agent", { type: config.type, model: config.model });
     const lastUser = messages.filter((m) => m.role === "user").pop();
     let prompt = lastUser?.content ?? "";
     let cleanup: (() => Promise<void>) | null = null;
@@ -235,6 +264,12 @@ export class AgentService {
         projectId: options.projectId,
       });
       const content = response?.content ?? "";
+      if (!content) {
+        log.warn("_invokePlanningAgentInner: CLI agent returned empty/null content", {
+          type: config.type,
+          responseWasNull: response?.content === null || response?.content === undefined,
+        });
+      }
       return { content };
     } finally {
       if (cleanup) await cleanup();
@@ -598,6 +633,14 @@ ${branchDiffStat || "(no output)"}
             textBlock && typeof textBlock === "object" && "text" in textBlock
               ? String(textBlock.text)
               : "";
+        }
+
+        if (!content || content.trim().length === 0) {
+          log.warn("invokeClaudePlanningAgent: Claude API returned empty content", {
+            model,
+            keySource: source,
+            hasStreamChunks: onChunk ? "yes" : "no",
+          });
         }
 
         await clearLimitHit(projectId, "ANTHROPIC_API_KEY", keyId, source);

@@ -521,8 +521,22 @@ export function SketchPhase({ projectId, onNavigateToPlan }: SketchPhaseProps) {
       }
       onNavigateToPlan?.();
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Failed to decompose PRD into plans";
+      let message: string;
+      if (isApiError(err)) {
+        const codeLabel = err.code && err.code !== "UNKNOWN" ? ` [${err.code}]` : "";
+        message = `Plan decomposition failed${codeLabel}: ${err.message}`;
+        console.error("[SketchPhase] handlePlanIt failed", {
+          code: err.code,
+          message: err.message,
+          details: err.details,
+        });
+      } else if (err instanceof Error) {
+        message = `Plan decomposition failed: ${err.message}`;
+        console.error("[SketchPhase] handlePlanIt failed", err);
+      } else {
+        message = "Failed to decompose PRD into plans (unknown error)";
+        console.error("[SketchPhase] handlePlanIt failed with non-Error", err);
+      }
       dispatch(addNotification({ message, severity: "error" }));
     } finally {
       setPlanningIt(false);
