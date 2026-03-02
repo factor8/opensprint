@@ -154,6 +154,17 @@ logStartup.info("Database source", { source: dbSource });
 const appDb = await initAppDb(databaseUrl);
 await taskStore.init(databaseUrl, appDb);
 
+// Readiness probe: checks that the database is reachable (use /health for simple liveness)
+app.get("/health/ready", async (_req, res) => {
+  const dbOk = await appDb.ping();
+  const status = dbOk ? "ok" : "degraded";
+  res.status(dbOk ? 200 : 503).json({
+    status,
+    timestamp: new Date().toISOString(),
+    checks: { database: dbOk ? "connected" : "unreachable" },
+  });
+});
+
 async function initAlwaysOnOrchestrator(): Promise<void> {
   const projectService = new ProjectService();
   const feedbackService = new FeedbackService();

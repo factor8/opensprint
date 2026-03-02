@@ -31,6 +31,11 @@ Traditional AI development is broken. Open Sprint fixes it.
 - **Engineering leads & dev teams** — AI handles execution and handoffs; scope and PRD stay intact; agents work in sequence and own coordination.
 - **Indie hackers & solo builders** — SPEED from sketch to ship; feedback loop on real usage; full agent team without hiring.
 
+## Prerequisites
+
+- **Node.js** ≥20 — [nodejs.org](https://nodejs.org/) or `brew install node`
+- **PostgreSQL** ≥14 — `npm run setup` installs it automatically on Mac/Linux. On Windows, install manually ([postgresql.org](https://www.postgresql.org/download/windows/) or `choco install postgresql`). The backend verifies the connection at startup and will exit with a clear error if PostgreSQL is unreachable.
+
 ## Quick Start
 
 **Mac:** Install [Node.js](https://nodejs.org/) ≥20 (e.g. `brew install node`), then:
@@ -150,6 +155,8 @@ OpenSprint uses PostgreSQL. **`npm run setup`** installs PostgreSQL locally (Hom
 Connection URL: `postgresql://opensprint:opensprint@localhost:5432/opensprint`
 
 To use a remote database (e.g. Supabase), set **`DATABASE_URL`** (env) or **`databaseUrl`** in `~/.opensprint/global-settings.json`. `DATABASE_URL` takes precedence for 12-factor deploys. To stop local Postgres on Mac: `brew services stop postgresql@16` (or `postgresql`). On Linux: `sudo systemctl stop postgresql`.
+
+**Health checks:** The backend verifies PostgreSQL connectivity at startup and exits with an actionable error if the database is unreachable. At runtime, `GET /health` is a simple liveness check (no DB round-trip) and `GET /health/ready` is a readiness probe that pings the database (returns `200` when connected, `503` when unreachable).
 
 ### Environment variables
 
