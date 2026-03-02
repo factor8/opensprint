@@ -22,6 +22,7 @@ import {
   PrdUploadButton,
   PrdChangeLog,
 } from "../../components/prd";
+import { addNotification } from "../../store/slices/notificationSlice";
 import { ResizableSidebar } from "../../components/layout/ResizableSidebar";
 import { useSubmitShortcut } from "../../hooks/useSubmitShortcut";
 import { useImageAttachment } from "../../hooks/useImageAttachment";
@@ -519,6 +520,10 @@ export function SketchPhase({ projectId, onNavigateToPlan }: SketchPhaseProps) {
         await refetchPlans.refetch();
       }
       onNavigateToPlan?.();
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to decompose PRD into plans";
+      dispatch(addNotification({ message, severity: "error" }));
     } finally {
       setPlanningIt(false);
     }
