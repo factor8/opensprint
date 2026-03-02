@@ -35,19 +35,23 @@ Traditional AI development is broken. Open Sprint fixes it.
 
 - **Node.js** ≥20 — [nodejs.org](https://nodejs.org/) or `brew install node`
 - **PostgreSQL** ≥14 — `npm run setup` installs it automatically on Mac/Linux. On Windows, install manually ([postgresql.org](https://www.postgresql.org/download/windows/) or `choco install postgresql`). The backend verifies the connection at startup and will exit with a clear error if PostgreSQL is unreachable.
+- **Beads** — Git-friendly issue tracker used by AI agents for task tracking. Install: `brew install beads`, `curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash`, or see [steveyegge/beads](https://github.com/steveyegge/beads). Run `bd init` in your project repo after setup.
 
 ## Quick Start
 
-**Mac:** Install [Node.js](https://nodejs.org/) ≥20 (e.g. `brew install node`), then:
+**Mac:**
 
 ```bash
-git clone https://github.com/toddmedema/opensprint.dev.git
-cd opensprint.dev
-npm run setup       # installs deps, PostgreSQL (if needed), creates user/database; writes default databaseUrl
+brew install node
+curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash
+git clone https://github.com/toddmedema/opensprint.git
+cd opensprint
+npm install
+npm run setup       # installs PostgreSQL (if needed), creates user/database; writes default databaseUrl
 npm run dev
 ```
 
-Then open **http://localhost:5173**. On Mac, setup is that simple — one `npm run setup` can install PostgreSQL via Homebrew and create the `opensprint` user and database.
+Then open **http://localhost:5173**. On Mac, `npm run setup` can install PostgreSQL via Homebrew and create the `opensprint` user and database.
 
 **Windows / Linux:** Same steps (`npm run setup` then `npm run dev`). On Linux, setup installs PostgreSQL via apt or yum/dnf and creates the user and database. On Windows, install [PostgreSQL](https://www.postgresql.org/download/windows/) yourself (or use Chocolatey: `choco install postgresql`), create user `opensprint` with password `opensprint` and database `opensprint`, or use a remote Postgres and set `databaseUrl` in `~/.opensprint/global-settings.json`.
 
