@@ -8,13 +8,21 @@ import { AppError } from "../middleware/error-handler.js";
 import { ErrorCodes } from "../middleware/error-codes.js";
 import { detectTestFramework } from "../services/test-framework.service.js";
 
-const FS_ALLOWED_ROOT = process.env.OPENSPRINT_FS_ROOT
-  ? path.resolve(process.env.OPENSPRINT_FS_ROOT)
-  : path.resolve(process.cwd());
+/** Resolved lazily so dotenv has loaded by the time the first request arrives. */
+let _fsAllowedRoot: string | undefined;
+function getFsAllowedRoot(): string {
+  if (!_fsAllowedRoot) {
+    _fsAllowedRoot = process.env.OPENSPRINT_FS_ROOT
+      ? path.resolve(process.env.OPENSPRINT_FS_ROOT)
+      : path.resolve(process.cwd());
+  }
+  return _fsAllowedRoot;
+}
 
 function isPathUnderRoot(resolvedPath: string): boolean {
+  const root = getFsAllowedRoot();
   const normalized = path.normalize(resolvedPath);
-  const relative = path.relative(FS_ALLOWED_ROOT, normalized);
+  const relative = path.relative(root, normalized);
   return (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative)));
 }
 
@@ -34,7 +42,7 @@ fsRouter.get(
       const rawPath = req.query.path;
       const targetPath = rawPath?.trim()
         ? resolve(rawPath)
-        : resolve(process.env.HOME || process.env.USERPROFILE || "/");
+        : getFsAllowedRoot();
 
       if (!isPathUnderRoot(targetPath)) {
         throw new AppError(400, ErrorCodes.INVALID_INPUT, "Path is outside the allowed directory.");
@@ -59,9 +67,10 @@ fsRouter.get(
         .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
       const parentPath = dirname(targetPath);
+      const canGoUp = parentPath !== targetPath && isPathUnderRoot(parentPath);
       const result: BrowseResult = {
         current: targetPath,
-        parent: parentPath !== targetPath ? parentPath : null,
+        parent: canGoUp ? parentPath : null,
         entries: dirEntries,
       };
 
