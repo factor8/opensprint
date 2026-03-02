@@ -109,11 +109,15 @@ export function SimplifiedAgentsStep({
                     rel="noopener noreferrer"
                     className="underline hover:opacity-80"
                   >
-                    Cursor → Integrations → User API Keys
+                    Cursor &rarr; Integrations &rarr; User API Keys
                   </a>
                   .
                 </>
               )}
+            </p>
+            <p className="text-sm text-theme-warning-text mt-1">
+              Or switch the provider below to <strong>Claude (CLI)</strong> or{" "}
+              <strong>Custom CLI</strong> to use a locally-installed agent without an API key.
             </p>
           </div>
           <div className="space-y-3">

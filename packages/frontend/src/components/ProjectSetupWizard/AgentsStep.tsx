@@ -106,7 +106,8 @@ export function AgentsStep({
         <div className="p-3 rounded-lg bg-theme-warning-bg border border-theme-warning-border">
           <p className="text-sm text-theme-warning-text">
             <strong>API key required:</strong> Configure API keys in Settings (gear icon on the
-            homepage).
+            homepage), or switch the provider below to <strong>Claude (CLI)</strong> or{" "}
+            <strong>Custom CLI</strong> to use a locally-installed agent instead.
           </p>
         </div>
       )}
