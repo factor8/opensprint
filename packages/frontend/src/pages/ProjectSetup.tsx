@@ -19,7 +19,7 @@ import type {
   GitWorkingMode,
   UnknownScopeStrategy,
 } from "@opensprint/shared";
-import { DEFAULT_AI_AUTONOMY_LEVEL, DEFAULT_DEPLOYMENT_CONFIG } from "@opensprint/shared";
+import { DEFAULT_AI_AUTONOMY_LEVEL, DEFAULT_DEPLOYMENT_CONFIG, getBestAvailableAgentType } from "@opensprint/shared";
 import { api, isApiError } from "../api/client";
 
 type Step = "basics" | "agents" | "testing" | "hil" | "confirm";
@@ -44,12 +44,12 @@ export function ProjectSetup() {
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [repoPath, setRepoPath] = useState("");
   const [simpleComplexityAgent, setSimpleComplexityAgent] = useState({
-    type: "cursor" as AgentType,
+    type: "claude-cli" as AgentType,
     model: "",
     cliCommand: "",
   });
   const [complexComplexityAgent, setComplexComplexityAgent] = useState({
-    type: "cursor" as AgentType,
+    type: "claude-cli" as AgentType,
     model: "",
     cliCommand: "",
   });
@@ -138,7 +138,13 @@ export function ProjectSetup() {
         const anthropic = (apiKeys?.ANTHROPIC_API_KEY?.length ?? 0) > 0;
         const cursor = (apiKeys?.CURSOR_API_KEY?.length ?? 0) > 0;
         const openai = (apiKeys?.OPENAI_API_KEY?.length ?? 0) > 0;
-        setEnvKeys({ anthropic, cursor, openai, claudeCli: env.claudeCli });
+        const keys = { anthropic, cursor, openai, claudeCli: env.claudeCli };
+        setEnvKeys(keys);
+
+        // Auto-select the best available provider based on configured keys
+        const best = getBestAvailableAgentType(keys);
+        setSimpleComplexityAgent((prev) => (prev.type === best ? prev : { ...prev, type: best, model: "" }));
+        setComplexComplexityAgent((prev) => (prev.type === best ? prev : { ...prev, type: best, model: "" }));
       })
       .catch(() => setEnvKeys(null));
   }, [step]);

@@ -11,6 +11,7 @@ import {
 } from "../components/ProjectSetupWizard";
 import type { ProjectMetadataState } from "../components/ProjectSetupWizard";
 import type { AgentType, ScaffoldRecoveryInfo } from "@opensprint/shared";
+import { getBestAvailableAgentType } from "@opensprint/shared";
 import { api, ApiError } from "../api/client";
 
 type Step = "basics" | "agents" | "scaffold";
@@ -35,12 +36,12 @@ export function CreateNewProjectPage() {
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
 
   const [simpleComplexityAgent, setSimpleComplexityAgent] = useState({
-    type: "cursor" as AgentType,
+    type: "claude-cli" as AgentType,
     model: "",
     cliCommand: "",
   });
   const [complexComplexityAgent, setComplexComplexityAgent] = useState({
-    type: "cursor" as AgentType,
+    type: "claude-cli" as AgentType,
     model: "",
     cliCommand: "",
   });
@@ -76,7 +77,13 @@ export function CreateNewProjectPage() {
         const anthropic = (apiKeys?.ANTHROPIC_API_KEY?.length ?? 0) > 0;
         const cursor = (apiKeys?.CURSOR_API_KEY?.length ?? 0) > 0;
         const openai = (apiKeys?.OPENAI_API_KEY?.length ?? 0) > 0;
-        setEnvKeys({ anthropic, cursor, openai, claudeCli: env.claudeCli });
+        const keys = { anthropic, cursor, openai, claudeCli: env.claudeCli };
+        setEnvKeys(keys);
+
+        // Auto-select the best available provider based on configured keys
+        const best = getBestAvailableAgentType(keys);
+        setSimpleComplexityAgent((prev) => (prev.type === best ? prev : { ...prev, type: best, model: "" }));
+        setComplexComplexityAgent((prev) => (prev.type === best ? prev : { ...prev, type: best, model: "" }));
       })
       .catch(() => setEnvKeys(null));
   }, [step]);

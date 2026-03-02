@@ -382,17 +382,16 @@ describe("CreateNewProjectPage", () => {
   });
 
   it("disables Next on agents step when cursor selected but API key missing", async () => {
+    // No keys available → auto-detection falls back to default (cursor), but cursor key is missing
     mockGlobalSettingsGet.mockResolvedValue({
       databaseUrl: "",
-      apiKeys: {
-        ANTHROPIC_API_KEY: [{ id: "a", masked: "••••••••" }],
-      },
+      apiKeys: {},
     });
     mockGetKeys.mockResolvedValue({
-      anthropic: true,
+      anthropic: false,
       cursor: false,
-      openai: true,
-      claudeCli: true,
+      openai: false,
+      claudeCli: false,
       useCustomCli: false,
     });
     const user = userEvent.setup();
