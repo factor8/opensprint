@@ -22,7 +22,6 @@ import {
   PrdUploadButton,
   PrdChangeLog,
 } from "../../components/prd";
-import { addNotification } from "../../store/slices/notificationSlice";
 import { ResizableSidebar } from "../../components/layout/ResizableSidebar";
 import { useSubmitShortcut } from "../../hooks/useSubmitShortcut";
 import { useImageAttachment } from "../../hooks/useImageAttachment";
@@ -537,7 +536,7 @@ export function SketchPhase({ projectId, onNavigateToPlan }: SketchPhaseProps) {
         message = "Failed to decompose PRD into plans (unknown error)";
         console.error("[SketchPhase] handlePlanIt failed with non-Error", err);
       }
-      dispatch(addNotification({ message, severity: "error" }));
+      dispatch(setSketchError(message));
     } finally {
       setPlanningIt(false);
     }
